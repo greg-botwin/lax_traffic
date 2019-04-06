@@ -1,0 +1,192 @@
+---
+title: "A Tidy Analysis of LAX Holiday Traffic Using Twitter and R"
+subtitle: ""
+author: "Greg Botwin"
+date: "SatRday Los Angeles | Apr 6, 2019 "
+output:
+  xaringan::moon_reader:
+    lib_dir: libs
+    nature:
+      highlightStyle: github
+      highlightLines: true
+      countIncrementalSlides: false
+---
+
+
+# About Me and This Short Talk
+
+- Research Associate in the [Translational Genomics Group](https://www.cedars-sinai.edu/Research/Research-Labs/McGovern-Lab/) at Cedars-Sinai
+
+- Experience in biology and clinical trials, ~4 years ago failed repeatedly and miserably to learn **R** until I came across the opinionated **tidyverse**
+
+- Mildly addicted to Twitter, lets connect [@gjbotwin](https://twitter.com/GJBotwin?lang=en)
+
+- Nothing unites LA like a shared hatred for traffic
+
+- Slides and code available at [https://github.com/greg-botwin](https://github.com/greg-botwin)
+
+```{r eval=FALSE, tidy=FALSE}
+install.packages("tidyverse", "rtweet")
+```
+
+---
+
+# Tidy Data Principles
+
+1. Each variable must have its own column.
+
+2. Each observation must have its own row.
+
+3. Each value must have its own cell.
+
+```{r, echo=FALSE}
+knitr::include_graphics("images/tidy-9.png")
+```
+
+.footnote[
+[1] Wickham, Hadley. "Tidy data." Journal of Statistical Software 59.10 (2014): 1-23.
+]
+---
+
+# Scrapping Twitter Data with rtweet
+
+<blockquote class="twitter-tweet" data-partner="tweetdeck"><p lang="en" dir="ltr"><a href="https://twitter.com/hashtag/LAX?src=hash&amp;ref_src=twsrc%5Etfw">#LAX</a> TRAFFIC UPDATE<br>(As of 10:00 PM) <br>Upper Level : 42 min<br>Lower Level: 20 min<br>Time to Terminal 1:<br>- From Sepulveda/Westchester: 10 min<br>- From Century/405: 13 min<br>- Via 105 from 405: 9 min<a href="https://twitter.com/hashtag/FlyLAX?src=hash&amp;ref_src=twsrc%5Etfw">#FlyLAX</a> <a href="https://twitter.com/hashtag/HolidayTraffic?src=hash&amp;ref_src=twsrc%5Etfw">#HolidayTraffic</a></p>&mdash; LAX Airport (@flyLAXairport) <a href="https://twitter.com/flyLAXairport/status/1080706573830217728?ref_src=twsrc%5Etfw">January 3, 2019</a></blockquote>
+<script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+
+```{r, eval=FALSE}
+library(rtweet)
+library(tidyverse)
+
+# first time users will need to authenticate
+#------ Sat Jan 12 18:08:41 2019 ------#
+tl <- get_timeline(user = "flyLAXairport", n = 1000)
+df <- tl %>%
+  filter(str_detect(text, "LAX TRAFFIC UPDATE")) %>%
+  select(text, created_at) %>%
+  separate(text, into = paste0("line", seq(1:9)), sep = "\\n")
+```
+
+```{r echo = FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(lubridate)
+library(knitr)
+library(kableExtra)
+### Get LAX Airport Twitter Timeline, 
+##------ Sat Jan 12 18:08:41 2019 ------##
+#tl <- get_timeline(user = "flyLAXairport", n = 1000)
+#saveRDS(tl, file = "lax_twitter_timeline_jan_12_2019.RData")
+tl <- readRDS("lax_twitter_timeline_jan_12_2019.RData")
+
+df <- tl %>%
+  filter(str_detect(text, "LAX TRAFFIC UPDATE")) %>%
+  select(text, created_at) %>%
+  separate(text, into = paste0("line", seq(1:9)), sep = "\\n")
+```
+
+
+```{r echo=FALSE}
+df <- df %>%
+  mutate(created_at = with_tz(created_at, Sys.timezone())) %>%
+  mutate(as_of = as.integer(str_extract(line2, "\\d+"))) %>%
+  mutate(am_pm = str_extract(line2, "AM|PM")) %>%
+  mutate(upper_level_min = as.integer(str_extract(line3, "\\d+"))) %>%
+  mutate(lower_level_min = as.integer(str_extract(line4, "\\d+"))) %>%
+  mutate(t1_sep_min = as.integer(str_extract(line6, "\\d+"))) %>%
+  mutate(t1_cent_min = as.integer(str_extract(line7, "\\d+(?= min?)"))) %>%
+  mutate(t1_105_min = as.integer(str_extract(line8, "\\d+(?= min?)")))
+```
+
+---
+
+# Make Data Tidy
+
+```{r}
+df <- df %>%
+  mutate(day_of_wk = lubridate::wday(created_at, label = TRUE)) %>%
+  mutate(day = date(created_at)) %>%
+  mutate(hour = hour(created_at))%>%
+  select(day_of_wk, day, hour, upper_level_min, lower_level_min, t1_sep_min,
+         t1_cent_min, t1_105_min, created_at) %>%
+  gather(key = "route", value = "time",-day_of_wk, -day, -hour, -created_at)
+```
+
+```{r echo=FALSE}
+df %>%
+  head(5)
+```
+
+---
+
+# Time to Complete One Loop Around LAX
+```{r, fig.width=11, echo=FALSE}
+df %>%
+  filter(route %in% c("upper_level_min", "lower_level_min")) %>%
+  group_by(route, hour) %>%
+  summarise(avg_time = mean(time),
+            sd_time = sd(time)) %>%
+  ggplot(aes(x = hour, y = avg_time, color = route)) + 
+  geom_line() + 
+  geom_point(size=3, shape=21, fill="white") + 
+  geom_errorbar(aes(ymin=avg_time - sd_time,
+                    ymax=avg_time + sd_time), width=.1) + 
+  theme_classic()+
+  theme(legend.text=element_text(size=14))
+```
+
+---
+# Time to Terminal 1 By Entrance Route
+```{r echo=FALSE, fig.width=11}
+df %>%
+  filter(!route %in% c("upper_level_min", "lower_level_min")) %>%
+  group_by(route, hour) %>%
+  summarise(avg_time = mean(time),
+            sd_time = sd(time)) %>%
+  ggplot(aes(x = hour, y = avg_time, color = route)) + 
+  geom_line() + 
+  geom_point(size=3, shape=21, fill="white") + 
+  geom_errorbar(aes(ymin=avg_time - sd_time,
+                    ymax=avg_time + sd_time), width=.1) + 
+  theme_classic() + 
+  labs(y = "Average Time (min)", x = "Hour of Day") + 
+  scale_color_discrete(name="Route",
+                         breaks=c("t1_105_min", "t1_cent_min", "t1_sep_min"),
+                         labels=c("105", "Century", "Sepulveda")) +
+  theme(legend.text=element_text(size=14))
+```
+
+---
+# Time to Terminal 1 By Route, Day and Hour
+```{r, echo=FALSE, fig.width=11}
+#Assign color variables
+col1 = "#d8e1cf" 
+col2 = "#438484"
+
+df %>%
+  filter(!route %in% c("upper_level_min", "lower_level_min")) %>%
+  ggplot(aes(hour, as.factor(day))) +
+  geom_tile(aes(fill = time),colour = "white", na.rm = FALSE) +
+  #scale_fill_gradient(low = col1, high = col2) +  
+  scale_fill_viridis_c()+
+  guides(fill=guide_legend(title="Time (min)")) +
+  theme_bw() + theme_minimal() + 
+  labs(y = "Day of Week", x = "Hour of Day") +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        legend.text=element_text(size=14), strip.text.x = element_text(size = 14)) +
+  facet_wrap(~route, scales = "free") 
+```
+
+---
+# Conclusions and Thank You
+- Tidy data principles can help by outlining a useful data structure
+
+- Try not to drive to LAX during the holidays
+
+- If you have to:
+
+  -- Take the lower loop 
+  
+  -- Avoid Century Blvd.
+  
+- Slides and full code available at [https://github.com/greg-botwin](https://github.com/greg-botwin)
+
+- **Thank you** for your attention!
