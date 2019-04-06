@@ -2,7 +2,8 @@
 title: "A Tidy Analysis of LAX Holiday Traffic Using Twitter and R"
 author: "Gregory Botwin"
 date: "06-APR-2019"
-output: html_document
+output: github_document
+always_allow_html: yes
 ---
 
 ```{r setup, include=FALSE}
@@ -82,21 +83,7 @@ df %>%
 
 No data exists from the midnight to 7am hour. Although it is probably fair to assume, traffic is not at its peak durring these hours, i would like to know the waittimes starting around 5am or 6. 
 
-## Worst Traffic Hour
-```{r}
-df %>%
-  group_by(route, hour) %>%
-  summarise(avg_time = mean(time),
-            sd_time = sd(time)) %>%
-  ggplot(aes(x = hour, y = avg_time, color = route)) + 
-  geom_line() + 
-  geom_point(size=3, shape=21, fill="white") + 
-  geom_errorbar(aes(ymin=avg_time - sd_time,
-                    ymax=avg_time + sd_time), width=.1) + 
-  theme_classic()
-
-```
-
+## Time to Complete One Loop Around LAX
 ```{r}
 df %>%
   filter(route %in% c("upper_level_min", "lower_level_min")) %>%
@@ -108,48 +95,64 @@ df %>%
   geom_point(size=3, shape=21, fill="white") + 
   geom_errorbar(aes(ymin=avg_time - sd_time,
                     ymax=avg_time + sd_time), width=.1) + 
-  theme_classic()
+  theme_classic()+
+  theme(legend.text=element_text(size=14))
 ```
 
+
+## Time to Terminal 1 By Entrance Route
+```{r}
+df %>%
+  filter(!route %in% c("upper_level_min", "lower_level_min")) %>%
+  group_by(route, hour) %>%
+  summarise(avg_time = mean(time),
+            sd_time = sd(time)) %>%
+  ggplot(aes(x = hour, y = avg_time, color = route)) + 
+  geom_line() + 
+  geom_point(size=3, shape=21, fill="white") + 
+  geom_errorbar(aes(ymin=avg_time - sd_time,
+                    ymax=avg_time + sd_time), width=.1) + 
+  theme_classic() + 
+  labs(y = "Average Time (min)", x = "Hour of Day") + 
+  scale_color_discrete(name="Route",
+                         breaks=c("t1_105_min", "t1_cent_min", "t1_sep_min"),
+                         labels=c("105", "Century", "Sepulveda")) +
+  theme(legend.text=element_text(size=14))
+
+```
+
+## Time to Terminal 1 By Route, Day and Hour
 ```{r}
 #Assign color variables
 col1 = "#d8e1cf" 
 col2 = "#438484"
 
 df %>%
-  filter(route %in% c("upper_level_min", "lower_level_min")) %>%
+  filter(!route %in% c("upper_level_min", "lower_level_min")) %>%
   ggplot(aes(hour, as.factor(day))) +
   geom_tile(aes(fill = time),colour = "white", na.rm = FALSE) +
   #scale_fill_gradient(low = col1, high = col2) +  
   scale_fill_viridis_c()+
   guides(fill=guide_legend(title="Time (min)")) +
   theme_bw() + theme_minimal() + 
-  labs(y = "Day of Week", x = "") +
-  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + 
-  facet_wrap(~route, scales = "free")
+  labs(y = "Day of Week", x = "Hour of Day") +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        legend.text=element_text(size=14), strip.text.x = element_text(size = 14)) +
+  facet_wrap(~route, scales = "free") 
 ```
 
-```{r, eval=FALSE}
-days_in_study <- tbl_df(data.frame(day = rep(seq.Date(from = as_date("2018/12/19"), 
-                                            to = as_date("2019/01/02"), by = "day"), 24))) %>%
-  group_by(day) %>%
-  mutate(hour = seq_along(1:24)) %>%
-  ungroup()
+## Conclusions and Thank You
+- Tidy data principles can help by outlining a useful data structure
 
-#Assign color variables
-col1 = "#d8e1cf" 
-col2 = "#438484"
+- Try not to drive to LAX during the holidays
 
-days_in_study %>%
-  left_join(., df, by = c("day" = "day", "hour" = "hour")) %>%
-  gather(key = "route", value = "min", -day, -hour, -created_at) %>%
-  ggplot(aes(hour, day)) +
-  geom_tile(aes(fill = min),colour = "white", na.rm = FALSE) +
-  scale_fill_gradient(low = col1, high = col2) +  
-  guides(fill=guide_legend(title="Time (min)")) +
-  theme_bw() + theme_minimal() + 
-  labs(title = "Histogram of Seattle Incidents by Day of Week and Hour",
-       x = "Incidents Per Hour", y = "Day of Week") +
-  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + 
-  facet_wrap(~route, scales = "free")
-```
+- If you have to:
+
+  -- Take the lower loop 
+  
+  -- Avoid Century Blvd.
+  
+- Slides and full code available at [https://github.com/greg-botwin](https://github.com/greg-botwin)
+
+- **Thank you** for your attention!
+
